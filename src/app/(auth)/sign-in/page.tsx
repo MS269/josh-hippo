@@ -15,11 +15,21 @@ import {
 } from "@/lib/validators/account-credentials-validator";
 import { trpc } from "@/trpc/client";
 import { toast } from "sonner";
-import { ZodError } from "zod";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export default function Page() {
   const router = useRouter();
+  const serachParams = useSearchParams();
+  const isSeller = serachParams.get("as") === "seller";
+  const origin = serachParams.get("origin");
+
+  const continueAsSeller = () => {
+    router.push("?as=seller");
+  };
+
+  const continueAsBuyer = () => {
+    router.replace("/sign-in", undefined);
+  };
 
   const {
     register,
@@ -29,26 +39,30 @@ export default function Page() {
     resolver: zodResolver(AuthCredentialsValidator),
   });
 
-  const { mutate: signUp } = trpc.auth.createPayloadUser.useMutation({
-    onError: (err) => {
-      if (err.data?.code === "CONFLICT") {
-        return toast.error("This email is already in use. Sign in instead?");
+  const { mutate: signIn, isLoading } = trpc.auth.signIn.useMutation({
+    onSuccess: () => {
+      toast.success("Signed in successfully");
+      router.refresh();
+
+      if (origin) {
+        return router.push(`/${origin}`);
       }
 
-      if (err instanceof ZodError) {
-        return toast.error(err.issues[0].message);
+      if (isSeller) {
+        return router.push("/sell");
       }
 
-      toast.error("Someting went wrong. Please try again.");
+      router.push("/");
     },
-    onSuccess: ({ sentToEmail }) => {
-      toast.success(`Verification email sent to ${sentToEmail}`);
-      router.push(`/verify-email?to=${sentToEmail}`);
+    onError: (err) => {
+      if (err.data?.code === "UNAUTHORIZED") {
+        toast.error("Invalid email or password.");
+      }
     },
   });
 
   const onSubmit = ({ email, password }: TAuthCredentialsValidator) => {
-    signUp({ email, password });
+    signIn({ email, password });
   };
 
   return (
@@ -56,16 +70,18 @@ export default function Page() {
       <div className="mx-auto flex-w-full flex-col justify-center space-y-6 sm:w-[350px]">
         <div className="flex flex-col items-center space-y-2 text-center">
           <Icons.logo className="h-20 w-20" />
-          <h1 className="text-2xl font-bold">Create an account</h1>
+          <h1 className="text-2xl font-bold">
+            Sign in to your {isSeller && "seller"} account
+          </h1>
 
           <Link
             className={buttonVariants({
               variant: "link",
               className: "gap-1.5",
             })}
-            href="/sign-in"
+            href="/sign-up"
           >
-            Already have an account? Sign in
+            Don&apos;t have an account?
             <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
@@ -105,9 +121,41 @@ export default function Page() {
                 )}
               </div>
 
-              <Button>Sign up</Button>
+              <Button>Sign in</Button>
             </div>
           </form>
+
+          <div className="relative">
+            <div
+              className="absolute inset-0 flex items-center"
+              aria-hidden="true"
+            >
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">
+                or
+              </span>
+            </div>
+          </div>
+
+          {isSeller ? (
+            <Button
+              onClick={continueAsBuyer}
+              variant="secondary"
+              disabled={isLoading}
+            >
+              Continue as customer
+            </Button>
+          ) : (
+            <Button
+              onClick={continueAsSeller}
+              variant="secondary"
+              disabled={isLoading}
+            >
+              Continue as seller
+            </Button>
+          )}
         </div>
       </div>
     </div>
